@@ -13,11 +13,11 @@ This project has no package manager metadata and uses only Node.js built-ins plu
 - Restart the service after repo updates or path moves: `./agentx-service update` or `./agentx-service restart`.
 - Stream service logs: `./agentx-service logs`.
 - Remove the generated user service without deleting repo files: `./agentx-service uninstall`.
-- Initialize and publish a private GitHub repo when untracked: `./agentx-service publish`.
-- Show the active mode and ranked mode table: `./agentx-mode` or `./agentx-mode --list`.
-- Switch routing mode without restarting the router: `./agentx-mode BB`.
-- Launch Claude Code with routing and the correct context-window cap for a mode: `./agentx-claude BPU`.
-- Connectivity smoke test, with router already running: `./smoke.sh BB`.
+- Initialize and publish the project as a GitHub repo when untracked: `./agentx-service publish`.
+- Show the active mode and the mode table: `./agentx-mode` or `./agentx-mode --list`.
+- Switch routing mode without restarting the router: `./agentx-mode BAL`.
+- Launch Claude Code with routing plus the context cap for the chosen model: `./agentx-claude PERF opus`.
+- Connectivity smoke test, with router already running: `./smoke.sh PERF`.
 - Run the router directly for local debugging: `node router.js`.
 - Syntax-check JavaScript without starting the server: `node --check router.js`.
 - Syntax-check Bash scripts: `bash -n agentx-up agentx-mode agentx-claude agentx-service smoke.sh`.
@@ -28,7 +28,7 @@ There is no automated unit test suite. `smoke.sh` is the live connectivity check
 
 `router.js` is a single-port local HTTP proxy bound to `127.0.0.1:${AGENTX_PORT:-8787}`. Claude Code should point `ANTHROPIC_BASE_URL` at that fixed port once; the router chooses the real upstream per request.
 
-The routing source of truth is `modes.json`. Each mode defines the Claude Code-facing main model, recommended effort, ultracode flag, and a route table for `opus`, `sonnet`, and `background` tiers. `router.js` classifies requests by reading `body.model` (`opus`, `sonnet`, or `haiku`/background), then maps that tier through the active mode to one of the configured upstream groups: `native`, `gpt55`, or `gpt54`.
+The routing source of truth is `modes.json`. Each mode is a routing table only: a `desc`, a `routes` map for the `opus`, `sonnet`, and `background` tiers, and a `default` upstream. Modes carry no model, effort, or ultracode fields; those are Claude Code-side choices. `router.js` classifies requests by reading `body.model` (`opus`, `sonnet`, or `haiku`/background), then maps that tier through the active mode to one of the configured upstream groups: `native`, `gpt55`, or `gpt54`.
 
 Runtime mode state lives in the `active-mode` file. `agentx-mode` validates a requested mode against `modes.json` and atomically writes this state file; `router.js` checks the file mtime on every request, so mode changes take effect on the next request with no router restart.
 
@@ -38,7 +38,7 @@ The shell scripts are operational wrappers:
 
 - `agentx-up` loads `.env`, seeds `active-mode` if missing, and execs `node router.js`.
 - `agentx-mode` lists modes or hot-swaps the active mode.
-- `agentx-claude` switches mode, derives the main model/context cap from `modes.json`, exports Claude Code context-window variables for gpt-5.5-main modes, and execs `claude`.
+- `agentx-claude` switches mode, then takes the main model as a second argument and derives the context cap from the active mode's route table: if the model's tier maps to `gpt55`, it exports the 200K context-window variables, otherwise it keeps 1M. The model argument is required for modes that route any tier to `gpt55`. Then it execs `claude`.
 - `smoke.sh` switches to a mode if provided, then probes `/v1/messages` through the router for Opus and Sonnet model names.
 - `agentx-service` installs, updates, and inspects the user-level service wrapper around `agentx-up`.
 
@@ -50,4 +50,4 @@ The shell scripts are operational wrappers:
 - Do not put real Anthropic keys in Claude Code settings for this router. The intended Claude Code token is the placeholder `router-managed`; the router supplies per-upstream credentials.
 - Do not rewrite Claude model names to GPT model names in requests. Sub2API mappings depend on receiving Claude-tier model names, and Claude Code feature gates also key off those names.
 - If changing mode semantics, update `modes.json` first, then keep `README.md` and script output in sync with it.
-- `agentx-claude` is required when moving between 1M-context modes and 200K gpt-5.5-main modes because Claude Code’s context window is fixed at launch; `agentx-mode` only hot-swaps routing.
+- `agentx-claude` is required when the main model's tier maps to gpt-5.5, because Claude Code's context window is fixed at launch and must be capped to 200K; `agentx-mode` only hot-swaps routing. The cap is derived from the model argument and the active mode's route table.

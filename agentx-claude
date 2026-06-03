@@ -1,45 +1,76 @@
 #!/usr/bin/env bash
-# agentx-claude <MODE> [claude args...] — switch to MODE and launch Claude Code
-# with the correct CONTEXT WINDOW for that mode.
+# agentx-claude <MODE> [model] [claude args...] — switch to MODE and launch Claude
+# Code with the correct CONTEXT WINDOW for the model you run as main.
 #
 # Why this exists: CC's context window is fixed per model name AT LAUNCH and the
-# router can't change it. gpt-5.5 tops out ~256K, so the gpt-5.5-main modes
-# (HP/BPU/BP/BBU) must run CC at ~200K or it will pack >256K and the upstream
-# hard-errors. Native + gpt-5.4-main modes keep 1M.
+# router can't change it. gpt-5.5 tops out ~256K, so if the model you run as main
+# maps to gpt-5.5 under the active mode, CC must run at ~200K or it will pack >256K
+# and the upstream hard-errors. The cap is derived from the route table: if the
+# main model's tier routes to gpt55, cap to 200K; otherwise keep 1M.
 #
-# Routing still HOT-SWAPS via ./agentx-mode while CC runs — but only safely
-# within the SAME context tier. To move between a 1M mode and a 200K mode,
-# RELAUNCH with this script (context can't hot-swap).
+# The model arg is REQUIRED for modes whose route table contains any gpt55 route
+# (HYBRID-P, PERF, BAL), because the cap can't be computed without knowing the main
+# model's tier. It is optional for modes with no gpt55 route (NATIVE, HYBRID-B),
+# which always run at 1M.
+#
+# Routing still HOT-SWAPS via ./agentx-mode while CC runs — but only safely within
+# the SAME context tier. To move between a 1M run and a 200K run, RELAUNCH here.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MODE="$(printf '%s' "${1:?usage: agentx-claude <MODE> [claude args...]}" | tr '[:lower:]' '[:upper:]')"
+MODE="$(printf '%s' "${1:?usage: agentx-claude <MODE> [model] [claude args...]}" | tr '[:lower:]' '[:upper:]')"
 shift || true
 
-# Set routing (validates MODE; exits non-zero if unknown).
+# The optional second arg is the model to run as main. Consume it only if it looks
+# like a model name (opus/sonnet/haiku), so trailing `claude` args aren't swallowed.
+MODEL=""
+case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+  *opus*|*sonnet*|*haiku*) MODEL="$1"; shift || true ;;
+esac
+
+# Ask modes.json (read-only): is MODE valid, does it contain any gpt55 route
+# (=> model required), and does the given model's tier route to gpt55 (=> cap)?
+# This runs BEFORE agentx-mode so a usage error never writes the active-mode state.
+{ IFS= read -r OK; IFS= read -r HAS_GPT55; IFS= read -r CAP; } < <(node -e '
+  const m = JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1], "modes.json")));
+  const mode = m[process.argv[2]];
+  if (!mode) { process.stdout.write("0\n0\n0\n"); process.exit(0); }
+  const model = (process.argv[3] || "").toLowerCase();
+  const routes = mode.routes || {};
+  const hasGpt55 = Object.values(routes).includes("gpt55") ? "1" : "0";
+  const tier = model.includes("haiku") ? "background" : model.includes("opus") ? "opus" : model.includes("sonnet") ? "sonnet" : "";
+  const cap = (tier && routes[tier] === "gpt55") ? "1" : "0";
+  process.stdout.write("1\n" + hasGpt55 + "\n" + cap + "\n");
+' "$HERE" "$MODE" "$MODEL")
+
+if [ "$OK" != "1" ]; then
+  echo "agentx-claude: unknown mode: $MODE  (run './agentx-mode --list')" >&2
+  exit 1
+fi
+
+# Require the model arg on gpt55-capable modes (cap can't be computed otherwise).
+# Validated BEFORE routing is switched, so an error leaves active-mode untouched.
+if [ "$HAS_GPT55" = "1" ] && [ -z "$MODEL" ]; then
+  echo "agentx-claude: mode $MODE routes a tier to gpt-5.5; pass the main model so the 200K cap can be set." >&2
+  echo "  e.g. ./agentx-claude $MODE opus     (or sonnet)" >&2
+  exit 1
+fi
+
+# All checks passed — now switch routing (writes active-mode).
 "$HERE/agentx-mode" "$MODE"
 
-# Derive main model + whether the main maps to gpt-5.5 (=> cap) + recommended effort.
-{ IFS= read -r MAIN; IFS= read -r CAP; IFS= read -r EFF; } < <(node -e '
-  const m = JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1], "modes.json")));
-  const x = m[process.argv[2]];
-  const tier = (s) => { s = (s || "").toLowerCase(); return s.includes("haiku") ? "background" : s.includes("opus") ? "opus" : s.includes("sonnet") ? "sonnet" : "opus"; };
-  process.stdout.write((x.main || "") + "\n" + (x.routes[tier(x.main)] === "gpt55" ? "1" : "0") + "\n" + ((x.cc && x.cc.effortLevel) || "") + "\n");
-' "$HERE" "$MODE")
-
-export ANTHROPIC_MODEL="$MAIN"
 if [ "$CAP" = "1" ]; then
-  # gpt-5.5 main: cap at ~200K. DISABLE_1M is the reliable lever (forces the
-  # model's 200K window + sends no 1M beta); the AUTO_COMPACT_* vars add margin
-  # (per CC docs — confirm they take effect on your CC version; if ignored,
-  # DISABLE_1M alone still caps at 200K and auto-compacts ~190K).
+  # main model maps to gpt-5.5: cap at ~200K. DISABLE_1M is the reliable lever
+  # (forces the model's 200K window + sends no 1M beta); the AUTO_COMPACT_* vars
+  # add margin (confirm they take effect on your CC version; if ignored, DISABLE_1M
+  # alone still caps at 200K and auto-compacts ~190K).
   export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
   export CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000
   export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=85
-  echo "[$MODE] context: 200K  (gpt-5.5 main; 1M disabled, auto-compact ~170K)"
+  echo "[$MODE] context: 200K  (main model ${MODEL} maps to gpt-5.5; 1M disabled, auto-compact ~170K)"
 else
   unset CLAUDE_CODE_DISABLE_1M_CONTEXT CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
-  echo "[$MODE] context: 1M  (native / gpt-5.4 main)"
+  echo "[$MODE] context: 1M  (main model ${MODEL:-unspecified} stays native / gpt-5.4)"
 fi
-echo "[$MODE] main=$MAIN ; in CC set:  /effort ${EFF:-?}"
+[ -n "$MODEL" ] && echo "[$MODE] in CC set:  /model $MODEL   (and /effort, or /effort ultracode for workflows)"
 exec claude "$@"

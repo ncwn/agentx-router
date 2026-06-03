@@ -17,26 +17,20 @@ if [ -z "$arg" ] || [ "$arg" = "-l" ] || [ "$arg" = "--list" ]; then
   node -e '
     const m = JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1], "modes.json")));
     const L = { native: "native", gpt55: "gpt-5.5", gpt54: "gpt-5.4" };
-    const RANK = ["NPU", "NP", "BPU", "HP", "BP", "BBU", "HB", "BB", "NB"]; // best -> casual (orchestrator intelligence)
-    const tier = (s) => { s = (s || "").toLowerCase(); return s.includes("haiku") ? "background" : s.includes("opus") ? "opus" : s.includes("sonnet") ? "sonnet" : "opus"; };
-    const ctxOf = (x) => x.routes[tier(x.main)] === "gpt55" ? "200K" : "1M"; // gpt-5.5 main caps at 200K (256K limit)
-    const W = [3, 5, 19, 6, 7, 6, 9, 9, 9];
+    const W = [10, 9, 9, 9];
     const row = (a) => a.map((s, i) => String(s).padEnd(W[i])).join("");
-    console.log("ranked best -> casual  (orchestrator intelligence: native Opus > gpt-5.5 > gpt-5.4 > native Sonnet)");
-    console.log("groups:  native = real Claude   |   gpt55 = Performance (-> gpt-5.5)   |   gpt54 = Balance (-> gpt-5.4)");
+    console.log("modes are editable routing tables (see modes.json). groups:");
+    console.log("  native = real Claude   |   gpt55 = Performance (-> gpt-5.5)   |   gpt54 = Balance (-> gpt-5.4)");
     console.log();
-    console.log(row(["#", "mode", "main", "ctx", "effort", "ultra", "opus", "sonnet", "bg/haiku"]));
-    console.log(row(["--", "----", "----", "---", "------", "-----", "----", "------", "--------"]));
-    const ord = (k) => { const i = RANK.indexOf(k); return i < 0 ? 99 : i; };
-    for (const k of Object.keys(m).sort((a, b) => ord(a) - ord(b))) {
-      const x = m[k], r = x.routes;
-      console.log(row([ord(k) < 99 ? ord(k) + 1 : "?", k, x.main || "", ctxOf(x), (x.cc && x.cc.effortLevel) || "", x.ultracode ? "yes" : "-", L[r.opus] || r.opus, L[r.sonnet] || r.sonnet, L[r.background] || r.background]));
+    console.log(row(["mode", "opus", "sonnet", "bg"]) + "desc");
+    console.log(row(["----", "----", "------", "--"]) + "----");
+    for (const k of Object.keys(m)) {
+      const r = m[k].routes;
+      console.log(row([k, L[r.opus] || r.opus, L[r.sonnet] || r.sonnet, L[r.background] || r.background]) + (m[k].desc || ""));
     }
     console.log();
-    console.log("the advisor + Opus workflow members follow the [opus] column; Sonnet members follow [sonnet].");
-    console.log("ultracode modes (ultra=yes) run at xhigh — activate with:  /effort ultracode  (= xhigh + workflows).");
-    const bad = Object.keys(m).filter((k) => m[k].ultracode && (!m[k].cc || (m[k].cc.effortLevel !== "xhigh" && m[k].cc.effortLevel !== "ultracode")));
-    if (bad.length) console.log("WARNING: ultracode requires xhigh — violated by: " + bad.join(", "));
+    console.log("model + effort are chosen in Claude Code (/model, /effort, /effort ultracode), not by the mode.");
+    console.log("context: any tier routing to gpt55 caps that model at 200K (gpt-5.5 limit) — agentx-claude sets this.");
   ' "$HERE"
   echo
   echo "usage: agentx-mode <MODE>"

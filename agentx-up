@@ -16,9 +16,9 @@ if [ -f "$HERE/.env" ]; then
   set +a
 fi
 
-# Seed the active mode on first run (defaults to NB, or $AGENTX_MODE if set).
+# Seed the active mode on first run (defaults to NATIVE, or $AGENTX_MODE if set).
 if [ ! -f "$STATE_FILE" ]; then
-  printf '%s\n' "$(printf '%s' "${AGENTX_MODE:-NB}" | tr '[:lower:]' '[:upper:]')" > "$STATE_FILE"
+  printf '%s\n' "$(printf '%s' "${AGENTX_MODE:-NATIVE}" | tr '[:lower:]' '[:upper:]')" > "$STATE_FILE"
 fi
 
 exec node "$HERE/router.js"

@@ -16,7 +16,7 @@
  * anthropic-*, the system[] blocks, metadata.user_id) pass through untouched.
  *
  * Run:  ./agentx-up      (starts this on the fixed port; leave it running)
- * Switch mode:  ./agentx-mode BB
+ * Switch mode:  ./agentx-mode BAL
  */
 const http = require('http');
 const https = require('https');
@@ -39,7 +39,7 @@ catch (e) { die('cannot read modes.json: ' + e.message); }
 const DEFAULT_MODE = (() => {
   const env = (process.env.AGENTX_MODE || '').trim().toUpperCase();
   if (modes[env]) return env;
-  return modes.NB ? 'NB' : Object.keys(modes)[0];
+  return modes.NATIVE ? 'NATIVE' : Object.keys(modes)[0];
 })();
 
 // Upstream name -> {base,key} from env. Resolved once at startup (env is fixed
@@ -162,9 +162,6 @@ server.listen(PORT, '127.0.0.1', () => {
   console.error(`agentx-cc-router (single-port, hot-swap)   http://127.0.0.1:${PORT}`);
   console.error(bar);
   console.error(`active mode  ${activeModeName()}   (state file: ${STATE_FILE})`);
-  const _am = modes[activeModeName()];
-  if (_am && _am.ultracode && (!_am.cc || (_am.cc.effortLevel !== 'xhigh' && _am.cc.effortLevel !== 'ultracode')))
-    console.error(`WARN: mode ${activeModeName()} is ultracode but effort="${_am.cc.effortLevel}" — ultracode only activates at xhigh`);
   console.error('switch with  ./agentx-mode <MODE>   — applies on the next request, no restart');
   for (const n of Object.keys(UPSTREAMS)) {
     const u = UPSTREAMS[n];
