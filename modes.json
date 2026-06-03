@@ -1,0 +1,92 @@
+{
+  "NPU": {
+    "desc": "Native Performance + Ultracode — opus+sonnet native, background gpt-5.4.",
+    "routes": { "opus": "native", "sonnet": "native", "background": "native" },
+    "default": "native",
+    "main": "claude-opus-4-8",
+    "ultracode": true,
+    "cc": { "effortLevel": "xhigh" },
+    "effort": { "main_opus": "xhigh", "advisor_opus": "xhigh", "workflow": "Opus xhigh + Sonnet max (native)" },
+    "notes": "Opus 1M main; advisor Opus 1M xhigh; workflows mix Opus xhigh + Sonnet max. Needs key A only (fully native)."
+  },
+  "NP": {
+    "desc": "Native Performance — opus+sonnet native, background gpt-5.4.",
+    "routes": { "opus": "native", "sonnet": "native", "background": "native" },
+    "default": "native",
+    "main": "claude-opus-4-8",
+    "ultracode": false,
+    "cc": { "effortLevel": "max" },
+    "effort": { "main_opus": "max", "advisor_opus": "max", "agent_teams": "Opus max + Sonnet max (native)" },
+    "notes": "Opus 1M main at max; advisor Opus 1M max; agent teams Opus max + Sonnet max. Needs key A only (fully native)."
+  },
+  "NB": {
+    "desc": "Native Balance — Sonnet main + Opus advisor (native), background gpt-5.4.",
+    "routes": { "opus": "native", "sonnet": "native", "background": "native" },
+    "default": "native",
+    "main": "claude-sonnet-4-6",
+    "ultracode": false,
+    "cc": { "effortLevel": "high" },
+    "effort": { "main_sonnet": "high", "advisor_opus": "xhigh", "agent_teams": "Sonnet high + Opus xhigh (native)" },
+    "notes": "Sonnet 200K main high; advisor Opus 1M xhigh; agent teams Sonnet high + Opus xhigh. Needs key A only (fully native)."
+  },
+  "HP": {
+    "desc": "Hybrid Performance (no ultracode) — main Sonnet->gpt-5.5, advisor Opus native, background gpt-5.4.",
+    "routes": { "opus": "native", "sonnet": "gpt55", "background": "gpt54" },
+    "default": "native",
+    "main": "claude-sonnet-4-6",
+    "ultracode": false,
+    "cc": { "effortLevel": "max" },
+    "effort": { "main_sonnet->gpt5.5": "max=>xhigh", "advisor_opus_native": "xhigh", "workflow": "Sonnet->gpt5.5 + Opus native" },
+    "notes": "MIXED: opus->native(A), sonnet->gpt55(B55). The opus-tier advisor stays native ONLY if it emits a claude-opus-* name — verify via this router's stderr on one run. Needs keys A + B55 + B54 (background->5.4)."
+  },
+  "HB": {
+    "desc": "Hybrid Balance (no ultracode) — main Sonnet->gpt-5.4, advisor Opus native, background gpt-5.4.",
+    "routes": { "opus": "native", "sonnet": "gpt54", "background": "gpt54" },
+    "default": "native",
+    "main": "claude-sonnet-4-6",
+    "ultracode": false,
+    "cc": { "effortLevel": "high" },
+    "effort": { "main_sonnet->gpt5.4": "high", "advisor_opus_native": "xhigh", "workflow": "Sonnet->gpt5.4 + Opus native" },
+    "notes": "MIXED: opus->native(A), sonnet->gpt54(B54). Per-role effort differs (main high, advisor xhigh) — set main via settings.json effortLevel, leave CLAUDE_CODE_EFFORT_LEVEL unset so subagents keep their own. Needs keys A + B54."
+  },
+  "BPU": {
+    "desc": "Backup Performance + Ultracode — opus:gpt-5.5, sonnet:gpt-5.5, bg:gpt-5.4 (main Opus @xhigh).",
+    "routes": { "opus": "gpt55", "sonnet": "gpt55", "background": "gpt54" },
+    "default": "gpt55",
+    "main": "claude-opus-4-8",
+    "ultracode": true,
+    "cc": { "effortLevel": "xhigh" },
+    "effort": { "main_opus->gpt5.5": "xhigh", "advisor_opus->gpt5.5": "xhigh", "workflow": "Opus->gpt5.5 + Sonnet->gpt5.5" },
+    "notes": "Performance backup: opus->gpt55 AND sonnet->gpt55 (both gpt-5.5), background->gpt54. Keep the name claude-opus-* so ultracode enables. No native key used. Distinct from BBU, which routes sonnet->gpt-5.4. Needs keys B55 + B54."
+  },
+  "BP": {
+    "desc": "Backup Performance — opus:gpt-5.5, sonnet:gpt-5.5, bg:gpt-5.4 (main Opus @high).",
+    "routes": { "opus": "gpt55", "sonnet": "gpt55", "background": "gpt54" },
+    "default": "gpt55",
+    "main": "claude-opus-4-8",
+    "ultracode": false,
+    "cc": { "effortLevel": "high" },
+    "effort": { "main_opus->gpt5.5": "high", "advisor_opus->gpt5.5": "high", "workflow": "Opus->gpt5.5 + Sonnet->gpt5.5" },
+    "notes": "Performance backup: opus->gpt55 AND sonnet->gpt55 (both gpt-5.5), background->gpt54. Same route table as BPU; differs from BPU only by effort (high vs xhigh) + ultracode (BPU has it). Distinct from BB/BBU (sonnet->gpt-5.4). Needs keys B55 + B54."
+  },
+  "BB": {
+    "desc": "Backup Balance — opus:gpt-5.5, sonnet:gpt-5.4, bg:gpt-5.4 (main Sonnet @high, advisor Opus->gpt-5.5).",
+    "routes": { "opus": "gpt55", "sonnet": "gpt54", "background": "gpt54" },
+    "default": "gpt54",
+    "main": "claude-sonnet-4-6",
+    "ultracode": false,
+    "cc": { "effortLevel": "high" },
+    "effort": { "main_sonnet->gpt5.4": "high", "advisor_opus->gpt5.5": "high", "workflow": "Sonnet->gpt5.4 + Opus->gpt5.5" },
+    "notes": "All mapped: opus->gpt55, sonnet->gpt54, background->gpt54. Advisor (opus-tier) lands on gpt55 here. Needs keys B55 + B54."
+  },
+  "BBU": {
+    "desc": "Backup Balance + Ultracode — Opus->gpt-5.5 main, Sonnet->gpt-5.4, background gpt-5.4.",
+    "routes": { "opus": "gpt55", "sonnet": "gpt54", "background": "gpt54" },
+    "default": "gpt55",
+    "main": "claude-opus-4-8",
+    "ultracode": true,
+    "cc": { "effortLevel": "xhigh" },
+    "effort": { "main_opus->gpt5.5": "xhigh", "advisor_opus->gpt5.5": "xhigh", "workflow": "Opus->gpt5.5 + Sonnet->gpt5.4" },
+    "notes": "Ultracode only activates at xhigh, so effort is xhigh (run /effort ultracode = xhigh + workflows). Routes sonnet->gpt54 (Balance) — DISTINCT from BPU, which routes sonnet->gpt55 (Performance). Needs keys B55 + B54."
+  }
+}

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# agentx-up — start the router daemon on the fixed port (foreground).
+# Loads .env, seeds the active-mode file if missing, then runs router.js.
+# Leave this running (a terminal tab, tmux pane, or background it). Switch
+# modes any time with ./agentx-mode <MODE> — no restart needed.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_FILE="${AGENTX_STATE_FILE:-$HERE/active-mode}"
+
+# Load upstreams/keys (KEY=VALUE lines; comments on their own lines).
+if [ -f "$HERE/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$HERE/.env"
+  set +a
+fi
+
+# Seed the active mode on first run (defaults to NB, or $AGENTX_MODE if set).
+if [ ! -f "$STATE_FILE" ]; then
+  printf '%s\n' "$(printf '%s' "${AGENTX_MODE:-NB}" | tr '[:lower:]' '[:upper:]')" > "$STATE_FILE"
+fi
+
+exec node "$HERE/router.js"

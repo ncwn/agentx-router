@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# agentx-mode <MODE> — switch the router's active mode (hot-swap).
+# Writes the mode to the state file; the running router picks it up on its next
+# request. No arg = show current mode + the list. The router must be started
+# separately with ./agentx-up (settings.json never changes).
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_FILE="${AGENTX_STATE_FILE:-$HERE/active-mode}"
+PORT="${AGENTX_PORT:-8787}"
+arg="${1:-}"
+
+if [ -z "$arg" ] || [ "$arg" = "-l" ] || [ "$arg" = "--list" ]; then
+  cur="$( [ -f "$STATE_FILE" ] && tr -d '\n' < "$STATE_FILE" || echo '(unset)')"
+  echo "active mode: $cur"
+  echo
+  node -e '
+    const m = JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1], "modes.json")));
+    const L = { native: "native", gpt55: "gpt-5.5", gpt54: "gpt-5.4" };
+    const RANK = ["NPU", "NP", "BPU", "HP", "BP", "BBU", "HB", "BB", "NB"]; // best -> casual (orchestrator intelligence)
+    const tier = (s) => { s = (s || "").toLowerCase(); return s.includes("haiku") ? "background" : s.includes("opus") ? "opus" : s.includes("sonnet") ? "sonnet" : "opus"; };
+    const ctxOf = (x) => x.routes[tier(x.main)] === "gpt55" ? "200K" : "1M"; // gpt-5.5 main caps at 200K (256K limit)
+    const W = [3, 5, 19, 6, 7, 6, 9, 9, 9];
+    const row = (a) => a.map((s, i) => String(s).padEnd(W[i])).join("");
+    console.log("ranked best -> casual  (orchestrator intelligence: native Opus > gpt-5.5 > gpt-5.4 > native Sonnet)");
+    console.log("groups:  native = real Claude   |   gpt55 = Performance (-> gpt-5.5)   |   gpt54 = Balance (-> gpt-5.4)");
+    console.log();
+    console.log(row(["#", "mode", "main", "ctx", "effort", "ultra", "opus", "sonnet", "bg/haiku"]));
+    console.log(row(["--", "----", "----", "---", "------", "-----", "----", "------", "--------"]));
+    const ord = (k) => { const i = RANK.indexOf(k); return i < 0 ? 99 : i; };
+    for (const k of Object.keys(m).sort((a, b) => ord(a) - ord(b))) {
+      const x = m[k], r = x.routes;
+      console.log(row([ord(k) < 99 ? ord(k) + 1 : "?", k, x.main || "", ctxOf(x), (x.cc && x.cc.effortLevel) || "", x.ultracode ? "yes" : "-", L[r.opus] || r.opus, L[r.sonnet] || r.sonnet, L[r.background] || r.background]));
+    }
+    console.log();
+    console.log("the advisor + Opus workflow members follow the [opus] column; Sonnet members follow [sonnet].");
+    console.log("ultracode modes (ultra=yes) run at xhigh — activate with:  /effort ultracode  (= xhigh + workflows).");
+    const bad = Object.keys(m).filter((k) => m[k].ultracode && (!m[k].cc || (m[k].cc.effortLevel !== "xhigh" && m[k].cc.effortLevel !== "ultracode")));
+    if (bad.length) console.log("WARNING: ultracode requires xhigh — violated by: " + bad.join(", "));
+  ' "$HERE"
+  echo
+  echo "usage: agentx-mode <MODE>"
+  exit 0
+fi
+
+MODE="$(printf '%s' "$arg" | tr '[:lower:]' '[:upper:]')"
+
+# Validate against modes.json.
+if ! node -e 'const m=JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1],"modes.json")));process.exit(m[process.argv[2]]?0:1)' "$HERE" "$MODE"; then
+  echo "unknown mode: $MODE  (run 'agentx-mode --list')"; exit 1
+fi
+
+# Atomic write so the router never reads a half-written file.
+tmp="$(mktemp "$HERE/.active-mode.XXXXXX")"
+printf '%s\n' "$MODE" > "$tmp"
+mv -f "$tmp" "$STATE_FILE"
+echo "active mode -> $MODE  (applies on the next request; no restart)"
+
+# Is the daemon up?
+if ! node -e 'const s=require("net").connect({host:"127.0.0.1",port:+process.argv[1]});s.on("connect",()=>{s.destroy();process.exit(0)});s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),800)' "$PORT" 2>/dev/null; then
+  echo "note: router not detected on 127.0.0.1:$PORT — start it with ./agentx-up"
+fi

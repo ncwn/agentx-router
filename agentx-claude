@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# agentx-claude <MODE> [claude args...] — switch to MODE and launch Claude Code
+# with the correct CONTEXT WINDOW for that mode.
+#
+# Why this exists: CC's context window is fixed per model name AT LAUNCH and the
+# router can't change it. gpt-5.5 tops out ~256K, so the gpt-5.5-main modes
+# (HP/BPU/BP/BBU) must run CC at ~200K or it will pack >256K and the upstream
+# hard-errors. Native + gpt-5.4-main modes keep 1M.
+#
+# Routing still HOT-SWAPS via ./agentx-mode while CC runs — but only safely
+# within the SAME context tier. To move between a 1M mode and a 200K mode,
+# RELAUNCH with this script (context can't hot-swap).
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODE="$(printf '%s' "${1:?usage: agentx-claude <MODE> [claude args...]}" | tr '[:lower:]' '[:upper:]')"
+shift || true
+
+# Set routing (validates MODE; exits non-zero if unknown).
+"$HERE/agentx-mode" "$MODE"
+
+# Derive main model + whether the main maps to gpt-5.5 (=> cap) + recommended effort.
+{ IFS= read -r MAIN; IFS= read -r CAP; IFS= read -r EFF; } < <(node -e '
+  const m = JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1], "modes.json")));
+  const x = m[process.argv[2]];
+  const tier = (s) => { s = (s || "").toLowerCase(); return s.includes("haiku") ? "background" : s.includes("opus") ? "opus" : s.includes("sonnet") ? "sonnet" : "opus"; };
+  process.stdout.write((x.main || "") + "\n" + (x.routes[tier(x.main)] === "gpt55" ? "1" : "0") + "\n" + ((x.cc && x.cc.effortLevel) || "") + "\n");
+' "$HERE" "$MODE")
+
+export ANTHROPIC_MODEL="$MAIN"
+if [ "$CAP" = "1" ]; then
+  # gpt-5.5 main: cap at ~200K. DISABLE_1M is the reliable lever (forces the
+  # model's 200K window + sends no 1M beta); the AUTO_COMPACT_* vars add margin
+  # (per CC docs — confirm they take effect on your CC version; if ignored,
+  # DISABLE_1M alone still caps at 200K and auto-compacts ~190K).
+  export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
+  export CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000
+  export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=85
+  echo "[$MODE] context: 200K  (gpt-5.5 main; 1M disabled, auto-compact ~170K)"
+else
+  unset CLAUDE_CODE_DISABLE_1M_CONTEXT CLAUDE_CODE_AUTO_COMPACT_WINDOW CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+  echo "[$MODE] context: 1M  (native / gpt-5.4 main)"
+fi
+echo "[$MODE] main=$MAIN ; in CC set:  /effort ${EFF:-?}"
+exec claude "$@"
