@@ -1,0 +1,52 @@
+{
+  "NATIVE": {
+    "description": "All model tiers use native Claude.",
+    "routes": {
+      "fable": "native",
+      "opus": "native",
+      "sonnet": "native",
+      "haiku": "native",
+      "default": "native"
+    }
+  },
+  "HYBRID-PERFORMANCE": {
+    "description": "Native Fable and Opus, Performance Sonnet, Balance Haiku.",
+    "routes": {
+      "fable": "native",
+      "opus": "native",
+      "sonnet": "performance",
+      "haiku": "balance",
+      "default": "native"
+    }
+  },
+  "HYBRID-BALANCE": {
+    "description": "Native Fable and Opus, Balance Sonnet and Haiku.",
+    "routes": {
+      "fable": "native",
+      "opus": "native",
+      "sonnet": "balance",
+      "haiku": "balance",
+      "default": "native"
+    }
+  },
+  "PERFORMANCE": {
+    "description": "Performance Fable, Opus, and Sonnet; Balance Haiku.",
+    "routes": {
+      "fable": "performance",
+      "opus": "performance",
+      "sonnet": "performance",
+      "haiku": "balance",
+      "default": "performance"
+    }
+  },
+  "BALANCE": {
+    "description": "Performance Opus; Balance Fable, Sonnet, and Haiku.",
+    "routes": {
+      "fable": "balance",
+      "opus": "performance",
+      "sonnet": "balance",
+      "haiku": "balance",
+      "default": "balance"
+    }
+  }
+}
