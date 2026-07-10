@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # smoke.sh [MODE] — connectivity check against the running router (single port).
-# If MODE is given, switches to it first. Sends a tiny non-streaming
-# /v1/messages for the opus + sonnet tiers and reports HTTP status + a snippet.
+# If MODE is given, switches to it first. Probes every routing tier and reports
+# HTTP status plus a response snippet.
 # Watch the ROUTER's stderr to confirm each request routed where you expect
-# (native / gpt55 / gpt54). This proves the request path + auth — NOT tool-use
+# (native / performance / balance). This proves request routing and auth, not
+# tool-use
 # fidelity (for that, run a real `claude` agentic task).
 set -euo pipefail
 
@@ -31,5 +32,8 @@ probe() {
 }
 
 echo "Smoke test against $BASE  (router must be running: ./agentx-up)"
+probe "claude-fable-5"
 probe "claude-opus-4-8"
-probe "claude-sonnet-4-6"
+probe "claude-sonnet-5"
+probe "claude-haiku-4-5"
+probe "agentx-unknown-model"

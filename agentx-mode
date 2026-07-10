@@ -1,56 +1,87 @@
-#!/usr/bin/env bash
-# agentx-mode <MODE> — switch the router's active mode (hot-swap).
-# Writes the mode to the state file; the running router picks it up on its next
-# request. No arg = show current mode + the list. The router must be started
-# separately with ./agentx-up (settings.json never changes).
-set -euo pipefail
+#!/usr/bin/env node
+'use strict';
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STATE_FILE="${AGENTX_STATE_FILE:-$HERE/active-mode}"
-PORT="${AGENTX_PORT:-8787}"
-arg="${1:-}"
+const fs = require('fs');
+const net = require('net');
+const path = require('path');
+const { ROOT, loadRoutes } = require('./src/config');
 
-if [ -z "$arg" ] || [ "$arg" = "-l" ] || [ "$arg" = "--list" ]; then
-  cur="$( [ -f "$STATE_FILE" ] && tr -d '\n' < "$STATE_FILE" || echo '(unset)')"
-  echo "active mode: $cur"
-  echo
-  node -e '
-    const m = JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1], "modes.json")));
-    const L = { native: "native", gpt55: "gpt-5.5", gpt54: "gpt-5.4" };
-    const W = [10, 9, 9, 9];
-    const row = (a) => a.map((s, i) => String(s).padEnd(W[i])).join("");
-    console.log("modes are editable routing tables (see modes.json). groups:");
-    console.log("  native = real Claude   |   gpt55 = Performance (-> gpt-5.5)   |   gpt54 = Balance (-> gpt-5.4)");
-    console.log();
-    console.log(row(["mode", "opus", "sonnet", "bg"]) + "desc");
-    console.log(row(["----", "----", "------", "--"]) + "----");
-    for (const k of Object.keys(m)) {
-      const r = m[k].routes;
-      console.log(row([k, L[r.opus] || r.opus, L[r.sonnet] || r.sonnet, L[r.background] || r.background]) + (m[k].desc || ""));
-    }
-    console.log();
-    console.log("model + effort are chosen in Claude Code (/model, /effort, /effort ultracode), not by the mode.");
-    console.log("context: any tier routing to gpt55 caps that model at 200K (gpt-5.5 limit) — agentx-claude sets this.");
-  ' "$HERE"
-  echo
-  echo "usage: agentx-mode <MODE>"
-  exit 0
-fi
+const stateFile = process.env.AGENTX_STATE_FILE || path.join(ROOT, 'var', 'active-mode');
+const port = Number(process.env.AGENTX_PORT || 8787);
 
-MODE="$(printf '%s' "$arg" | tr '[:lower:]' '[:upper:]')"
+function currentMode() {
+  try { return fs.readFileSync(stateFile, 'utf8').trim() || '(unset)'; }
+  catch (_) { return '(unset)'; }
+}
 
-# Validate against modes.json.
-if ! node -e 'const m=JSON.parse(require("fs").readFileSync(require("path").join(process.argv[1],"modes.json")));process.exit(m[process.argv[2]]?0:1)' "$HERE" "$MODE"; then
-  echo "unknown mode: $MODE  (run 'agentx-mode --list')"; exit 1
-fi
+function printTable(headers, rows) {
+  const widths = headers.map((header, index) => Math.max(header.length, ...rows.map((row) => row[index].length)));
+  const line = (row) => row.map((value, index) => value.padEnd(widths[index])).join('  ').trimEnd();
+  console.log(line(headers));
+  console.log(line(widths.map((width) => '-'.repeat(width))));
+  for (const row of rows) console.log(line(row));
+}
 
-# Atomic write so the router never reads a half-written file.
-tmp="$(mktemp "$HERE/.active-mode.XXXXXX")"
-printf '%s\n' "$MODE" > "$tmp"
-mv -f "$tmp" "$STATE_FILE"
-echo "active mode -> $MODE  (applies on the next request; no restart)"
+function printModes(modes) {
+  const headers = ['Mode', 'Fable', 'Opus', 'Sonnet', 'Haiku', 'Default', 'Description'];
+  const rows = Object.entries(modes).map(([name, mode]) => [
+    name,
+    mode.routes.fable,
+    mode.routes.opus,
+    mode.routes.sonnet,
+    mode.routes.haiku,
+    mode.routes.default,
+    mode.description,
+  ]);
 
-# Is the daemon up?
-if ! node -e 'const s=require("net").connect({host:"127.0.0.1",port:+process.argv[1]});s.on("connect",()=>{s.destroy();process.exit(0)});s.on("error",()=>process.exit(1));setTimeout(()=>process.exit(1),800)' "$PORT" 2>/dev/null; then
-  echo "note: router not detected on 127.0.0.1:$PORT — start it with ./agentx-up"
-fi
+  console.log(`active mode: ${currentMode()}\n`);
+  printTable(headers, rows);
+  console.log('\nUpstreams are logical server groups: native, performance, balance.');
+  console.log('Concrete model versions and effort settings belong to the upstream servers.');
+}
+
+function writeMode(name) {
+  const directory = path.dirname(stateFile);
+  fs.mkdirSync(directory, { recursive: true });
+  const temporary = path.join(directory, `.${path.basename(stateFile)}.${process.pid}.${Date.now()}`);
+  try {
+    fs.writeFileSync(temporary, `${name}\n`, { mode: 0o600 });
+    fs.renameSync(temporary, stateFile);
+  } finally {
+    try { fs.unlinkSync(temporary); } catch (_) {}
+  }
+}
+
+function routerListening() {
+  return new Promise((resolve) => {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return resolve(false);
+    const socket = net.connect({ host: '127.0.0.1', port });
+    const done = (value) => {
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(800, () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
+
+async function main() {
+  const modes = loadRoutes();
+  const argument = process.argv[2] || '';
+  if (!argument || argument === '-l' || argument === '--list') {
+    printModes(modes);
+    return;
+  }
+
+  const mode = argument.toUpperCase();
+  if (!modes[mode]) throw new Error(`unknown mode: ${mode} (run './agentx-mode --list')`);
+  writeMode(mode);
+  console.log(`active mode -> ${mode} (applies on the next request; no restart)`);
+  if (!(await routerListening())) console.log(`note: router not detected on 127.0.0.1:${port}; start it with ./agentx-up`);
+}
+
+main().catch((error) => {
+  console.error(`agentx-mode: ${error.message}`);
+  process.exit(1);
+});
