@@ -19,8 +19,16 @@ test('agentx-mode lists routes and atomically writes selected mode', (t) => {
   assert.match(list, /Mode\s+Fable\s+Opus\s+Sonnet\s+Haiku\s+Default/);
   assert.match(list, /HYBRID-PERFORMANCE/);
   assert.match(list, /logical server groups: native, performance, balance/);
-  assert.match(list, /Concrete model versions and effort settings belong to the upstream servers/);
-  assert.doesNotMatch(list, /gpt-[\d.]+/i);
+  assert.match(list, /Effort\s+Group\s+Fable Target\s+Opus Target\s+Sonnet Target\s+Haiku Target/);
+  assert.match(list, /HIGH\s+PERFORMANCE\s+gpt-5\.6-sol\s+gpt-5\.5\s+gpt-5\.6-terra\s+gpt-5\.6-sol/);
+  assert.match(list, /HIGH\s+BALANCE\s+gpt-5\.6-terra\s+gpt-5\.6-terra\s+gpt-5\.6-luna\s+gpt-5\.6-sol/);
+  assert.match(list, /XHIGH\s+PERFORMANCE\s+gpt-5\.6-sol\s+gpt-5\.5\s+gpt-5\.6-terra\s+gpt-5\.6-sol/);
+  assert.match(list, /XHIGH\s+BALANCE\s+gpt-5\.6-terra\s+gpt-5\.6-terra\s+gpt-5\.6-luna\s+gpt-5\.6-sol/);
+  assert.match(list, /MAX\s+PERFORMANCE\s+gpt-5\.6-sol\s+gpt-5\.6-terra\s+gpt-5\.6-luna\s+gpt-5\.6-sol/);
+  assert.match(list, /MAX\s+BALANCE\s+gpt-5\.6-terra\s+gpt-5\.6-terra\s+gpt-5\.6-luna\s+gpt-5\.6-sol/);
+  assert.match(list, /PERFORMANCE\s+Haiku\s+gpt-5\.6-sol\/medium\s+gpt-5\.6-sol\/medium\s+gpt-5\.6-sol\/medium/);
+  assert.match(list, /BALANCE\s+Default\s+gpt-5\.6-terra\/high\s+gpt-5\.6-terra\/xhigh\s+gpt-5\.6-terra\/max/);
+  assert.match(list, /local router does not switch target models by effort/);
 
   const output = execFileSync(command, ['balance'], { env, encoding: 'utf8' });
   assert.match(output, /active mode -> BALANCE/);
